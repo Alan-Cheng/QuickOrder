@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div id="messages"></div>
+    <button onclick="sendMessage('Hello, WebSocket!')">Send Message</button>
+
+    <script>
+        // 設定 WebSocket 連接
+        const socket = new WebSocket("ws://localhost:8080/qod/api/ws");
+
+        // 當接收到消息時，將其顯示在頁面上
+        socket.onmessage = function(event) {
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML += '<p>' + event.data + '</p>';
+        };
+
+        function sendMessage(msg) {
+            // 檢查 WebSocket 是否處於 OPEN 狀態
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(msg);
+            } else {
+                console.error("WebSocket is not open. Current state: " + socket.readyState);
+            }
+        }
+    </script>
+</body>
+</html>
