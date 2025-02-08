@@ -3,29 +3,217 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Test</title>
+    <title>WebSocket Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f9;
+        }
+
+        #loginContainer, #chatContainer {
+            width: 100%;
+            max-width: 500px;
+            padding: 20px;
+            box-sizing: border-box;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        #messages {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 10px;
+        }
+
+        .message {
+            padding: 8px 12px;
+            margin: 5px;
+            border-radius: 8px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .my-message {
+            background-color: #007bff;
+            color: white;
+            align-self: flex-end;
+            text-align: right;
+        }
+
+        .other-message {
+            background-color: #f1f1f1;
+            color: black;
+            align-self: flex-start;
+            text-align: left;
+        }
+
+        .timestamp {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 4px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        @media (max-width: 600px) {
+            #messages {
+                height: 200px;
+            }
+
+            input[type="text"] {
+                font-size: 14px;
+            }
+
+            button {
+                font-size: 14px;
+            }
+
+            .message {
+                font-size: 14px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <h1>WebSocket Test</h1>
-    <div id="messages"></div>
-    <button onclick="sendMessage('Hello, WebSocket!')">Send Message</button>
+    <div id="loginContainer">
+        <input type="text" id="usernameInput" placeholder="輸入你的名稱..." />
+        <button onclick="enterChat()">進入聊天室</button>
+    </div>
+
+    <div id="chatContainer" style="display: none;">
+        <h2>歡迎, <span id="displayUsername"></span>!</h2>
+        <div id="messages"></div>
+        <input type="text" id="messageInput" placeholder="輸入訊息..." />
+        <button onclick="sendMessage()">Send</button>
+    </div>
 
     <script>
-        // 設定 WebSocket 連接
-        const socket = new WebSocket("ws://localhost:8080/qod/api/ws");
+        let socket;
+        let username = "";
+        let reconnectInterval = 5000;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
 
-        // 當接收到消息時，將其顯示在頁面上
-        socket.onmessage = function(event) {
-            const messagesDiv = document.getElementById('messages');
-            messagesDiv.innerHTML += '<p>' + event.data + '</p>';
-        };
+        function enterChat() {
+            const input = document.getElementById("usernameInput");
+            username = input.value.trim();
 
-        function sendMessage(msg) {
-            // 檢查 WebSocket 是否處於 OPEN 狀態
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send(msg);
+            if (!username) {
+                alert("請輸入名稱才能進入聊天室！");
+                return;
+            }
+
+            document.getElementById("loginContainer").style.display = "none";
+            document.getElementById("chatContainer").style.display = "block";
+            document.getElementById("displayUsername").innerText = username;
+
+            connectWebSocket();
+        }
+
+        async function getServerIp() {
+            try {
+                const response = await fetch('/qod/api/host-ip');
+                if (response.ok) {
+                    const ip = await response.text();
+                    return ip;
+                } else {
+                    console.error("❌ 無法獲取伺服器 IP 地址");
+                    return null;
+                }
+            } catch (error) {
+                console.error("❌ 無法獲取伺服器 IP 地址:", error);
+                return null;
+            }
+        }
+
+        async function connectWebSocket() {
+            const ip = await getServerIp();
+            if (!ip) {
+                console.error("❌ 無法連接 WebSocket，伺服器 IP 無效");
+                return;
+            }
+
+            const url = `ws://${ip}:8080/qod/api/ws/chat`;
+            socket = new WebSocket(url);
+
+            socket.onopen = () => {
+                console.log("✅ WebSocket 連線成功！");
+                reconnectAttempts = 0;
+            };
+
+            socket.onmessage = (event) => {
+                const messagesDiv = document.getElementById("messages");
+                const data = JSON.parse(event.data);
+                const isMe = data.username === username;
+
+                const messageDiv = document.createElement("div");
+                messageDiv.classList.add("message", isMe ? "my-message" : "other-message");
+                messageDiv.innerHTML = `<strong>${data.username}:</strong> ${data.message} 
+                                        <div class="timestamp">${new Date().toLocaleTimeString()}</div>`;
+                
+                messagesDiv.appendChild(messageDiv);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            };
+
+            socket.onerror = (error) => {
+                console.error("❌ WebSocket 發生錯誤：", error);
+            };
+
+            socket.onclose = (event) => {
+                console.warn("⚠️ WebSocket 連線關閉，5 秒後重新連線...", event);
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    setTimeout(connectWebSocket, reconnectInterval);
+                } else {
+                    console.error("🚨 已達最大重連次數，停止重連。");
+                }
+            };
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById("messageInput");
+            const message = messageInput.value.trim();
+
+            if (message && socket.readyState === WebSocket.OPEN) {
+                const payload = JSON.stringify({ username, message });
+                socket.send(payload);
+                messageInput.value = "";
+            } else if (!message) {
+                console.error("⚠️ 請輸入訊息後再發送！");
             } else {
-                console.error("WebSocket is not open. Current state: " + socket.readyState);
+                console.error("❌ WebSocket 尚未連線，無法發送訊息。");
             }
         }
     </script>
